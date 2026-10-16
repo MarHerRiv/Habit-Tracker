@@ -1,9 +1,10 @@
+
 generator client {
   provider = "prisma-client-js"
 }
 
 datasource db {
-  provider  = "postgresql"
+  provider = "postgresql"
 }
 
 model User {
@@ -13,9 +14,10 @@ model User {
   emailVerified DateTime?
   image         String?
 
-  accounts      Account[]
-  sessions      Session[]
-  habits        Habit[]
+  accounts       Account[]
+  sessions       Session[]
+  habits         Habit[]
+  journalEntries JournalEntry[]
 }
 
 model Account {
@@ -55,19 +57,40 @@ model VerificationToken {
 }
 
 model Habit {
-  id        String   @id @default(uuid())
-  title     String
-  createdAt DateTime @default(now())
-  userId    String
+  id           String   @id @default(uuid())
+  title        String
+  createdAt    DateTime @default(now())
+  userId       String
+  scheduledDays Int[]   @default([])
 
-  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  logs      Log[]
+  user User  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  logs Log[]
+
+  @@index([userId])
 }
 
 model Log {
   id        String   @id @default(uuid())
   completed Boolean  @default(true)
-  date      DateTime @default(now())
+  date      DateTime @default(now()) @db.Date
   habitId   String
-  habit     Habit    @relation(fields: [habitId], references: [id], onDelete: Cascade)
+  note      String?  @db.Text
+
+  habit Habit @relation(fields: [habitId], references: [id], onDelete: Cascade)
+
+  @@unique([habitId, date])
+}
+
+model JournalEntry {
+  id        String   @id @default(uuid())
+  date      DateTime @default(now()) @db.Date
+  content   String   @db.Text
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  userId    String
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, date])
+  @@index([userId])
 }
