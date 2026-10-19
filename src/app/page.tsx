@@ -48,17 +48,6 @@ function getLocalDateString() {
   return `${year}-${month}-${day}`;
 }
 
-function formatCalendarDate(date: string) {
-  const [year, month, day] = date.slice(0, 10).split('-');
-  return `${day}/${month}/${year}`;
-}
-
-function getWeekdayLabel(date: string) {
-  const [year, month, day] = date.slice(0, 10).split('-').map(Number);
-  const weekday = new Date(year, month - 1, day).getDay();
-  return WEEKDAYS.find((item) => item.value === weekday)?.label ?? '';
-}
-
 export default function Home() {
   const { data: session, status } = useSession();
 
@@ -81,6 +70,7 @@ export default function Home() {
   const [journalError, setJournalError] = useState('');
   const [journalStatus, setJournalStatus] = useState('');
   const [journalEntryDate, setJournalEntryDate] = useState('');
+  const [activeView, setActiveView] = useState<'home' | 'create' | 'edit' | 'shop' | 'journals'>('home');
 
   const today = getLocalDateString();
 
@@ -344,337 +334,449 @@ export default function Home() {
     );
   }
 
+  const todayWeekday = new Date().getDay();
+  const todaysHabits = habits.filter(
+    (habit) =>
+      !habit.scheduledDays?.length ||
+      habit.scheduledDays.includes(todayWeekday)
+  );
+
+  const navigation = [
+    { id: 'home', label: 'Home', icon: '⌂' },
+    { id: 'create', label: 'Create new Habit', icon: '+' },
+    { id: 'edit', label: 'Edit current habits', icon: '✎' },
+    { id: 'shop', label: 'Points shop', icon: '✦' },
+    { id: 'journals', label: 'View Journals', icon: '▤' },
+  ] as const;
+
   return (
-    <main className="max-w-2xl mx-auto p-8 font-sans">
-      <div className="flex justify-between items-center mb-6 gap-4">
-        <div>
-          <h1 className="text-3xl font-bold text-gray-800">
-            Habit &amp; Micro-Journal Tracker
-          </h1>
-
-          <p className="text-sm text-gray-500 mt-1">
-            Signed in as {session.user?.email}
-          </p>
-        </div>
-
-        <div className="flex flex-col items-end gap-2">
-          <div className="rounded-lg border bg-amber-50 px-3 py-2 text-right">
-            <p className="text-sm font-semibold text-amber-900">
-              {finalizedPoints.toLocaleString()} points
-            </p>
-            <p className="text-xs text-amber-800">
-              +{pendingPoints.toLocaleString()} pending today
+    <main className="min-h-screen bg-slate-50 font-sans text-slate-800">
+      <header className="sticky top-0 z-20 border-b border-slate-200 bg-white/95 backdrop-blur">
+        <div className="flex min-h-24 items-center justify-between gap-6 px-6 py-4 lg:px-10">
+          <div className="min-w-0">
+            <h1 className="text-xl font-bold tracking-tight text-slate-900 sm:text-2xl">
+              Habit &amp; Micro-Journal Tracker
+            </h1>
+            <p className="mt-1 truncate text-sm text-slate-500">
+              Signed in as {session.user?.email}
             </p>
           </div>
-          <button
-            onClick={() => signOut()}
-            className="px-4 py-2 bg-gray-100 text-gray-700 font-medium rounded-lg hover:bg-gray-200 transition"
-          >
-            Sign out
-          </button>
-        </div>
-      </div>
 
-      <section className="mb-8 rounded-lg border p-4">
-        <h2 className="text-xl font-semibold text-gray-800 mb-1">
-          Daily micro-journal
-        </h2>
-
-        <p className="text-sm text-gray-500 mb-4">
-          {new Date(`${today}T12:00:00`).toLocaleDateString(undefined, {
-            weekday: 'long',
-            year: 'numeric',
-            month: 'long',
-            day: 'numeric',
-          })}
-        </p>
-
-        {journalLoading ? (
-          <p className="text-gray-500">Loading your journal...</p>
-        ) : (
-          <form onSubmit={saveJournal} className="space-y-3">
-            <label
-              htmlFor="daily-journal"
-              className="block text-sm font-medium text-gray-700"
-            >
-              What's on your mind today?
-            </label>
-
-            <textarea
-              id="daily-journal"
-              value={journalContent}
-              onChange={(e) => {
-                setJournalContent(e.target.value);
-                setJournalStatus('');
-              }}
-              maxLength={10000}
-              rows={5}
-              placeholder="Write a few thoughts about your day..."
-              className="w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-gray-800"
-            />
-
-            {journalEntryDate === today && (
-              <p className="text-xs text-gray-500">
-                You have a saved entry for today. You can edit it and save again.
+          <div className="flex shrink-0 items-center gap-4">
+            <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-2 text-right">
+              <p className="text-sm font-bold text-amber-950">
+                {finalizedPoints.toLocaleString()} points
               </p>
-            )}
-
-            {journalError && (
-              <p role="alert" className="text-sm text-red-600">
-                {journalError}
+              <p className="text-xs text-amber-800">
+                +{pendingPoints.toLocaleString()} pending today
               </p>
-            )}
-
-            {journalStatus && (
-              <p role="status" className="text-sm text-green-700">
-                {journalStatus}
-              </p>
-            )}
-
+            </div>
             <button
-              type="submit"
-              disabled={journalSaving}
-              className="px-5 py-2 bg-blue-600 text-white font-medium rounded-lg hover:bg-blue-700 disabled:opacity-50 transition"
+              onClick={() => signOut()}
+              className="rounded-lg border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-100"
             >
-              {journalSaving ? 'Saving...' : 'Save journal entry'}
+              Sign out
             </button>
-          </form>
-        )}
-      </section>
-
-      <form
-        onSubmit={addHabit}
-        className="mb-8 space-y-4 rounded-lg border p-4"
-      >
-        <h2 className="text-xl font-semibold text-gray-800">Habits</h2>
-
-        <div>
-          <label
-            htmlFor="habit-title"
-            className="block text-sm font-medium text-gray-700 mb-1"
-          >
-            New habit
-          </label>
-
-          <input
-            id="habit-title"
-            type="text"
-            value={newHabit}
-            onChange={(e) => setNewHabit(e.target.value)}
-            placeholder="e.g., Read for 20 minutes"
-            maxLength={120}
-            className="w-full px-4 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-gray-800"
-          />
+          </div>
         </div>
+      </header>
 
-        <div>
-          <label
-            htmlFor="habit-points"
-            className="block text-sm font-medium text-gray-700 mb-1"
-          >
-            Points for completing this habit
-          </label>
-          <input
-            id="habit-points"
-            type="number"
-            min={0}
-            max={1000000}
-            step={1}
-            required
-            value={newHabitPoints}
-            onChange={(e) => setNewHabitPoints(e.target.value)}
-            className="w-full px-4 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-gray-800"
-          />
-          <p className="text-xs text-gray-500 mt-1">
-            These points stay pending until the end of the day. You can undo
-            a completion during the day to remove its pending points.
+      <div className="mx-auto flex min-h-[calc(100vh-97px)] max-w-[1800px]">
+        <aside className="w-60 shrink-0 border-r border-slate-200 bg-white px-4 py-6">
+          <p className="mb-3 px-3 text-xs font-bold uppercase tracking-wider text-slate-400">
+            Workspace
           </p>
-        </div>
-
-        <fieldset>
-          <legend className="text-sm font-medium text-gray-700 mb-2">
-            Which days do you want to do this habit?
-          </legend>
-
-          <div className="flex flex-wrap gap-2">
-            {WEEKDAYS.map((day) => {
-              const selected = scheduledDays.includes(day.value);
-
+          <nav className="space-y-1" aria-label="Main navigation">
+            {navigation.map((item) => {
+              const selected = activeView === item.id;
               return (
                 <button
-                  key={day.value}
+                  key={item.id}
                   type="button"
-                  aria-pressed={selected}
-                  onClick={() => toggleScheduledDay(day.value)}
-                  className={`px-3 py-2 rounded-lg border text-sm font-medium transition ${
+                  onClick={() => setActiveView(item.id)}
+                  aria-current={selected ? 'page' : undefined}
+                  className={`flex w-full items-center gap-3 rounded-xl px-3 py-3 text-left text-sm font-semibold transition ${
                     selected
-                      ? 'bg-blue-600 text-white border-blue-600'
-                      : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-100'
+                      ? 'bg-blue-50 text-blue-700'
+                      : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'
                   }`}
                 >
-                  {day.label}
+                  <span className={`flex h-7 w-7 items-center justify-center rounded-lg text-base ${
+                    selected ? 'bg-blue-100 text-blue-700' : 'bg-slate-100 text-slate-500'
+                  }`}>
+                    {item.icon}
+                  </span>
+                  {item.label}
                 </button>
               );
             })}
+          </nav>
+          <div className="mt-8 rounded-xl bg-slate-50 p-4">
+            <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">
+              Today
+            </p>
+            <p className="mt-2 text-sm font-semibold text-slate-700">
+              {new Date(`${today}T12:00:00`).toLocaleDateString(undefined, {
+                weekday: 'long',
+                month: 'long',
+                day: 'numeric',
+              })}
+            </p>
+            <p className="mt-1 text-xs leading-5 text-slate-500">
+              Small steps add up. Keep your momentum going.
+            </p>
           </div>
+        </aside>
 
-          <p className="text-xs text-gray-500 mt-2">
-            Select any combination of days. Leave all unselected if the
-            habit has no fixed weekly schedule.
-          </p>
-        </fieldset>
+        <section className="min-w-0 flex-1 p-6 lg:p-8">
+          {activeView === 'home' && (
+            <div>
+              <div className="mb-6">
+                <p className="text-sm font-semibold text-blue-700">YOUR DASHBOARD</p>
+                <h2 className="mt-1 text-2xl font-bold tracking-tight text-slate-900">
+                  Today at a glance
+                </h2>
+                <p className="mt-1 text-sm text-slate-500">
+                  Your daily reflection and habits scheduled for today.
+                </p>
+              </div>
 
-        {formError && (
-          <p role="alert" className="text-sm text-red-600">
-            {formError}
-          </p>
-        )}
+              <div className="grid grid-cols-1 items-start gap-6">
+                <section className="min-w-0">
+                  <div className="mb-4 flex items-end justify-between gap-4">
+                    <div>
+                      <p className="text-xs font-bold uppercase tracking-wide text-blue-700">
+                        Daily checklist
+                      </p>
+                      <h3 className="mt-1 text-lg font-bold text-slate-900">Today’s habits</h3>
+                    </div>
+                    <span className="shrink-0 rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-600">
+                      {todaysHabits.filter((habit) =>
+                        habit.logs.some((log) => log.date.slice(0, 10) === today && log.completed)
+                      ).length} / {todaysHabits.length} complete
+                    </span>
+                  </div>
 
-        <button
-          type="submit"
-          disabled={saving}
-          className="px-6 py-2 bg-blue-600 text-white font-medium rounded-lg hover:bg-blue-700 disabled:opacity-50 transition"
-        >
-          {saving ? 'Adding...' : 'Add habit'}
-        </button>
-      </form>
+                  {loading ? (
+                    <p className="rounded-xl border border-slate-200 bg-white p-5 text-sm text-slate-500">
+                      Loading habits...
+                    </p>
+                  ) : todaysHabits.length === 0 ? (
+                    <div className="rounded-2xl border border-dashed border-slate-300 bg-white p-8 text-center">
+                      <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-2xl bg-blue-50 text-2xl text-blue-700">
+                        +
+                      </div>
+                      <h4 className="mt-3 font-semibold text-slate-900">Nothing scheduled yet</h4>
+                      <p className="mt-1 text-sm text-slate-500">
+                        Create a habit to start building your daily routine.
+                      </p>
+                      <button
+                        type="button"
+                        onClick={() => setActiveView('create')}
+                        className="mt-4 rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-blue-700"
+                      >
+                        Create a habit
+                      </button>
+                    </div>
+                  ) : (
+                    <div className="grid grid-cols-1 gap-4 md:grid-cols-2 2xl:grid-cols-3">
+                      {todaysHabits.map((habit) => {
+                        const todayLogRecord = habit.logs.find(
+                          (log) => log.date.slice(0, 10) === today
+                        );
+                        const todayLog = todayLogRecord?.completed ? todayLogRecord : null;
+                        const existingNote = todayLogRecord?.note ?? '';
+                        const completedCount = habit.logs.filter((log) => log.completed).length;
 
-      {loading ? (
-        <p className="text-gray-500">Loading habits...</p>
-      ) : habits.length === 0 ? (
-        <p className="text-gray-500">
-          No habits added yet. Start by creating one above!
-        </p>
-      ) : (
-        <div className="space-y-4">
-          {habits.map((habit) => {
-            const todayLogRecord = habit.logs.find(
-              (log) => log.date.slice(0, 10) === today
-            );
-            const todayLog = todayLogRecord?.completed ? todayLogRecord : null;
-            const existingNote = todayLogRecord?.note ?? '';
-            const isScheduledToday =
-              !habit.scheduledDays?.length ||
-              habit.scheduledDays.includes(new Date().getDay());
-            const previousCompletion = habit.logs
-              .filter(
-                (log) =>
-                  log.completed && log.date.slice(0, 10) < today
-              )
-              .sort((a, b) =>
-                b.date.slice(0, 10).localeCompare(a.date.slice(0, 10))
-              )[0];
-            const completedCount = habit.logs.filter(
-              (log) => log.completed
-            ).length;
+                        return (
+                          <article
+                            key={habit.id}
+                            className={`flex min-w-0 flex-col rounded-2xl border bg-white p-4 shadow-sm transition ${
+                              todayLog ? 'border-emerald-200' : 'border-slate-200'
+                            }`}
+                          >
+                            <div className="flex items-start justify-between gap-2">
+                              <div className="min-w-0">
+                                <h4 className="break-words font-bold text-slate-900">
+                                  {habit.title}
+                                </h4>
+                                <p className="mt-1 text-xs text-slate-500">
+                                  {habit.points ?? 10} points · completed {completedCount} times
+                                </p>
+                              </div>
+                              {todayLog && (
+                                <span className="shrink-0 rounded-full bg-emerald-50 px-2 py-1 text-xs font-semibold text-emerald-700">
+                                  Done
+                                </span>
+                              )}
+                            </div>
 
-            return (
-              <div
-                key={habit.id}
-                className="p-4 border rounded-lg shadow-sm bg-white"
-              >
-                <div className="flex justify-between items-start gap-4">
-                  <div>
-                    <h3 className="text-lg font-semibold text-gray-800">
-                      {habit.title}
+                            <div className="mt-4 flex flex-1 flex-col gap-3">
+                              <label
+                                htmlFor={`note-${habit.id}`}
+                                className="text-xs font-semibold text-slate-600"
+                              >
+                                Note for today <span className="font-normal text-slate-400">(optional)</span>
+                              </label>
+                              <textarea
+                                id={`note-${habit.id}`}
+                                value={noteDrafts[habit.id] ?? existingNote}
+                                onChange={(e) =>
+                                  setNoteDrafts((current) => ({
+                                    ...current,
+                                    [habit.id]: e.target.value,
+                                  }))
+                                }
+                                maxLength={2000}
+                                rows={3}
+                                placeholder="How did it go?"
+                                className="w-full resize-y rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-800 outline-none transition placeholder:text-slate-400 focus:border-blue-400 focus:bg-white focus:ring-2 focus:ring-blue-100"
+                              />
+
+                              {completionErrors[habit.id] && (
+                                <p role="alert" className="text-xs text-red-600">
+                                  {completionErrors[habit.id]}
+                                </p>
+                              )}
+
+                              {todayLog ? (
+                                <>
+                                  <p className="text-xs leading-5 text-emerald-700">
+                                    Completed today · +{todayLog.pointsEarned ?? 0} pending points
+                                  </p>
+                                  <button
+                                    type="button"
+                                    onClick={() => completeHabit(habit.id, existingNote, false)}
+                                    disabled={savingHabitId === habit.id}
+                                    className="mt-auto rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm font-semibold text-emerald-800 transition hover:bg-emerald-100 disabled:opacity-50"
+                                  >
+                                    {savingHabitId === habit.id ? 'Saving...' : 'Undo completion'}
+                                  </button>
+                                </>
+                              ) : (
+                                <button
+                                  type="button"
+                                  onClick={() => completeHabit(habit.id, existingNote, true)}
+                                  disabled={savingHabitId === habit.id}
+                                  className="mt-auto rounded-xl bg-blue-600 px-3 py-2 text-sm font-semibold text-white transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50"
+                                >
+                                  {savingHabitId === habit.id
+                                    ? 'Saving...'
+                                    : `Complete (+${habit.points ?? 10} points)`}
+                                </button>
+                              )}
+
+                              <button
+                                type="button"
+                                onClick={() => deleteHabit(habit.id)}
+                                className="self-start text-xs font-medium text-slate-400 transition hover:text-red-600"
+                              >
+                                Delete habit
+                              </button>
+                            </div>
+                          </article>
+                        );
+                      })}
+                    </div>
+                  )}
+                </section>
+
+
+                <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+                  <div className="mb-4">
+                    <p className="text-xs font-bold uppercase tracking-wide text-blue-700">
+                      Daily reflection
+                    </p>
+                    <h3 className="mt-1 text-lg font-bold text-slate-900">
+                      Micro-journal
                     </h3>
-
-                    <p className="text-sm text-gray-500 mt-1">
-                      Schedule: {formatSchedule(habit.scheduledDays ?? [])}
-                    </p>
-
-                    <p className="text-sm text-gray-500">
-                      Worth {habit.points ?? 10} points per completion
-                    </p>
-
-                    <p className="text-sm text-gray-500">
-                      Completed {completedCount} times
+                    <p className="mt-1 text-sm text-slate-500">
+                      {new Date(`${today}T12:00:00`).toLocaleDateString(undefined, {
+                        weekday: 'long',
+                        year: 'numeric',
+                        month: 'long',
+                        day: 'numeric',
+                      })}
                     </p>
                   </div>
 
+                  {journalLoading ? (
+                    <p className="py-4 text-sm text-slate-500">Loading your journal...</p>
+                  ) : (
+                    <form onSubmit={saveJournal} className="space-y-3">
+                      <label
+                        htmlFor="daily-journal"
+                        className="block text-sm font-medium text-slate-700"
+                      >
+                        What’s on your mind today?
+                      </label>
+                      <textarea
+                        id="daily-journal"
+                        value={journalContent}
+                        onChange={(e) => {
+                          setJournalContent(e.target.value);
+                          setJournalStatus('');
+                        }}
+                        maxLength={10000}
+                        rows={10}
+                        placeholder="Write a few thoughts about your day..."
+                        className="w-full resize-y rounded-xl border border-slate-200 bg-slate-50 px-3 py-3 text-sm text-slate-800 outline-none transition placeholder:text-slate-400 focus:border-blue-400 focus:bg-white focus:ring-2 focus:ring-blue-100"
+                      />
+                      {journalEntryDate === today && (
+                        <p className="text-xs text-slate-500">
+                          You have a saved entry for today. You can edit it and save again.
+                        </p>
+                      )}
+                      {journalError && (
+                        <p role="alert" className="text-sm text-red-600">{journalError}</p>
+                      )}
+                      {journalStatus && (
+                        <p role="status" className="text-sm text-emerald-700">{journalStatus}</p>
+                      )}
+                      <button
+                        type="submit"
+                        disabled={journalSaving}
+                        className="w-full rounded-xl bg-blue-600 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50"
+                      >
+                        {journalSaving ? 'Saving...' : 'Save journal entry'}
+                      </button>
+                    </form>
+                  )}
+                </section>
+              </div>
+            </div>
+          )}
+
+          {activeView === 'create' && (
+            <div className="mx-auto max-w-3xl">
+              <p className="text-sm font-semibold text-blue-700">HABIT MANAGEMENT</p>
+              <h2 className="mt-1 text-2xl font-bold tracking-tight text-slate-900">
+                Create a new habit
+              </h2>
+              <p className="mt-1 text-sm text-slate-500">
+                Set a name, choose a weekly schedule, and decide how many points it earns.
+              </p>
+
+              <form
+                onSubmit={addHabit}
+                className="mt-6 space-y-6 rounded-2xl border border-slate-200 bg-white p-6 shadow-sm"
+              >
+                <div>
+                  <label htmlFor="habit-title" className="mb-2 block text-sm font-semibold text-slate-700">
+                    Habit name
+                  </label>
+                  <input
+                    id="habit-title"
+                    type="text"
+                    value={newHabit}
+                    onChange={(e) => setNewHabit(e.target.value)}
+                    placeholder="e.g., Read for 20 minutes"
+                    maxLength={120}
+                    className="w-full rounded-xl border border-slate-200 px-4 py-3 text-slate-800 outline-none transition focus:border-blue-400 focus:ring-2 focus:ring-blue-100"
+                  />
+                </div>
+
+                <div>
+                  <label htmlFor="habit-points" className="mb-2 block text-sm font-semibold text-slate-700">
+                    Points for completing this habit
+                  </label>
+                  <input
+                    id="habit-points"
+                    type="number"
+                    min={0}
+                    max={1000000}
+                    step={1}
+                    required
+                    value={newHabitPoints}
+                    onChange={(e) => setNewHabitPoints(e.target.value)}
+                    className="w-full rounded-xl border border-slate-200 px-4 py-3 text-slate-800 outline-none transition focus:border-blue-400 focus:ring-2 focus:ring-blue-100"
+                  />
+                  <p className="mt-2 text-xs leading-5 text-slate-500">
+                    Points stay pending until the end of the day. You can undo a completion during the day to remove its pending points.
+                  </p>
+                </div>
+
+                <fieldset>
+                  <legend className="mb-3 text-sm font-semibold text-slate-700">
+                    Which days do you want to do this habit?
+                  </legend>
+                  <div className="flex flex-wrap gap-2">
+                    {WEEKDAYS.map((day) => {
+                      const selected = scheduledDays.includes(day.value);
+                      return (
+                        <button
+                          key={day.value}
+                          type="button"
+                          aria-pressed={selected}
+                          onClick={() => toggleScheduledDay(day.value)}
+                          className={`rounded-xl border px-4 py-2.5 text-sm font-semibold transition ${
+                            selected
+                              ? 'border-blue-600 bg-blue-600 text-white'
+                              : 'border-slate-200 bg-white text-slate-700 hover:bg-slate-50'
+                          }`}
+                        >
+                          {day.label}
+                        </button>
+                      );
+                    })}
+                  </div>
+                  <p className="mt-3 text-xs text-slate-500">
+                    Select any combination of days. Leave all unselected if the habit has no fixed weekly schedule.
+                  </p>
+                </fieldset>
+
+                {formError && (
+                  <p role="alert" className="text-sm text-red-600">{formError}</p>
+                )}
+
+                <div className="flex flex-wrap gap-3">
                   <button
-                    onClick={() => deleteHabit(habit.id)}
-                    className="px-3 py-2 bg-red-100 text-red-600 font-medium rounded-lg hover:bg-red-200 transition"
+                    type="submit"
+                    disabled={saving}
+                    className="rounded-xl bg-blue-600 px-5 py-3 text-sm font-semibold text-white transition hover:bg-blue-700 disabled:opacity-50"
                   >
-                    Delete
+                    {saving ? 'Creating habit...' : 'Create habit'}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setActiveView('home')}
+                    className="rounded-xl border border-slate-200 px-5 py-3 text-sm font-semibold text-slate-700 transition hover:bg-slate-50"
+                  >
+                    Back to Home
                   </button>
                 </div>
+              </form>
+            </div>
+          )}
 
-                <div className="mt-4 space-y-3">
-                  <label
-                    htmlFor={`note-${habit.id}`}
-                    className="block text-sm font-medium text-gray-700"
-                  >
-                    Note for today (optional)
-                  </label>
-
-                  <textarea
-                    id={`note-${habit.id}`}
-                    value={noteDrafts[habit.id] ?? existingNote}
-                    onChange={(e) =>
-                      setNoteDrafts((current) => ({
-                        ...current,
-                        [habit.id]: e.target.value,
-                      }))
-                    }
-                    maxLength={2000}
-                    rows={2}
-                    placeholder="How did it go today?"
-                    className="w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-gray-800"
-                  />
-
-                  {todayLog ? (
-                    <button
-                      type="button"
-                      onClick={() => completeHabit(habit.id, existingNote, false)}
-                      disabled={savingHabitId === habit.id}
-                      className="px-4 py-2 bg-green-100 text-green-800 font-medium rounded-lg hover:bg-green-200 disabled:opacity-50 transition"
-                    >
-                      {savingHabitId === habit.id
-                        ? 'Saving...'
-                        : 'Undo today’s completion'}
-                    </button>
-                  ) : (
-                    <button
-                      type="button"
-                      onClick={() => completeHabit(habit.id, existingNote, true)}
-                      disabled={
-                        savingHabitId === habit.id || !isScheduledToday
-                      }
-                      className="px-4 py-2 bg-blue-600 text-white font-medium rounded-lg hover:bg-blue-700 disabled:opacity-50 transition"
-                    >
-                      {savingHabitId === habit.id
-                        ? 'Saving...'
-                        : isScheduledToday
-                          ? `Mark complete today (+${habit.points ?? 10} pending points)`
-                          : 'Not scheduled today'}
-                    </button>
-                  )}
-
-                  {todayLog && (
-                    <p className="text-sm text-green-700">
-                      Completed today — +{todayLog.pointsEarned ?? 0} pending points.
-                    </p>
-                  )}
-
-                  {!todayLog && !isScheduledToday && previousCompletion && (
-                    <p className="text-sm text-gray-600">
-                      Completed {getWeekdayLabel(previousCompletion.date)} (
-                      {formatCalendarDate(previousCompletion.date)})
-                    </p>
-                  )}
-
-                  {completionErrors[habit.id] && (
-                    <p role="alert" className="text-sm text-red-600">
-                      {completionErrors[habit.id]}
-                    </p>
-                  )}
-                </div>
-              </div>
-            );
-          })}
-        </div>
-      )}
+          {activeView === 'edit' && (
+            <ComingSoon title="Edit current habits" description="Habit editing and management tools will live here." />
+          )}
+          {activeView === 'shop' && (
+            <ComingSoon title="Points shop" description="You’ll be able to spend your earned points here in a future update." />
+          )}
+          {activeView === 'journals' && (
+            <ComingSoon title="View Journals" description="Browse and revisit your previous journal entries here in a future update." />
+          )}
+        </section>
+      </div>
     </main>
+  );
+}
+
+function ComingSoon({ title, description }: { title: string; description: string }) {
+  return (
+    <div className="flex min-h-[55vh] items-center justify-center">
+      <div className="max-w-md text-center">
+        <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-blue-50 text-2xl text-blue-700">
+          ✦
+        </div>
+        <p className="mt-5 text-xs font-bold uppercase tracking-wider text-blue-700">
+          Coming soon
+        </p>
+        <h2 className="mt-2 text-2xl font-bold tracking-tight text-slate-900">{title}</h2>
+        <p className="mt-2 text-sm leading-6 text-slate-500">{description}</p>
+      </div>
+    </div>
   );
 }
