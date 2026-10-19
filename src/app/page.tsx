@@ -1,4 +1,3 @@
-
 'use client';
 
 import { useState, useEffect } from 'react';
@@ -70,7 +69,18 @@ export default function Home() {
   const [journalError, setJournalError] = useState('');
   const [journalStatus, setJournalStatus] = useState('');
   const [journalEntryDate, setJournalEntryDate] = useState('');
-  const [activeView, setActiveView] = useState<'home' | 'create' | 'edit' | 'shop' | 'journals'>('home');
+  const [activeView, setActiveView] = useState<
+    'home' | 'create' | 'edit' | 'shop' | 'journals'
+  >('home');
+
+  // State for the Edit Current Habits screen.
+  const [editingHabitId, setEditingHabitId] = useState<string | null>(null);
+  const [editTitle, setEditTitle] = useState('');
+  const [editPoints, setEditPoints] = useState('10');
+  const [editScheduledDays, setEditScheduledDays] = useState<number[]>([]);
+  const [editSaving, setEditSaving] = useState(false);
+  const [editError, setEditError] = useState('');
+  const [editStatus, setEditStatus] = useState('');
 
   const today = getLocalDateString();
 
@@ -146,12 +156,31 @@ export default function Home() {
     );
   };
 
+  const toggleEditScheduledDay = (day: number) => {
+    setEditScheduledDays((current) =>
+      current.includes(day)
+        ? current.filter((value) => value !== day)
+        : [...current, day].sort((a, b) => a - b)
+    );
+  };
+
   const addHabit = async (e: React.FormEvent) => {
     e.preventDefault();
     setFormError('');
 
     if (!newHabit.trim()) {
       setFormError('Please enter a habit title.');
+      return;
+    }
+
+    const pointsValue = Number(newHabitPoints);
+    if (
+      newHabitPoints.trim() === '' ||
+      !Number.isSafeInteger(pointsValue) ||
+      pointsValue < 0 ||
+      pointsValue > 1000000
+    ) {
+      setFormError('Points must be a whole number from 0 to 1,000,000.');
       return;
     }
 
@@ -164,7 +193,7 @@ export default function Home() {
         body: JSON.stringify({
           title: newHabit.trim(),
           scheduledDays,
-          points: Number(newHabitPoints),
+          points: pointsValue,
         }),
       });
 
@@ -178,6 +207,7 @@ export default function Home() {
       setNewHabitPoints('10');
       setScheduledDays([]);
       await fetchHabits();
+      setActiveView('home');
     } catch (error) {
       console.error('Error adding habit:', error);
       setFormError('A network error occurred. Please try again.');
@@ -266,19 +296,105 @@ export default function Home() {
     }
   };
 
+  const startEditingHabit = (habit: Habit) => {
+    setEditingHabitId(habit.id);
+    setEditTitle(habit.title);
+    setEditPoints(String(habit.points ?? 10));
+    setEditScheduledDays([...(habit.scheduledDays ?? [])]);
+    setEditError('');
+    setEditStatus('');
+  };
+
+  const cancelEditingHabit = () => {
+    setEditingHabitId(null);
+    setEditTitle('');
+    setEditPoints('10');
+    setEditScheduledDays([]);
+    setEditError('');
+  };
+
+  const saveHabitChanges = async (e: React.FormEvent) => {
+    e.preventDefault();
+
+    if (!editingHabitId) return;
+
+    setEditError('');
+    setEditStatus('');
+
+    const pointsValue = Number(editPoints);
+    if (
+      !editTitle.trim() ||
+      editTitle.trim().length > 120
+    ) {
+      setEditError('Enter a habit name between 1 and 120 characters.');
+      return;
+    }
+
+    if (
+      editPoints.trim() === '' ||
+      !Number.isSafeInteger(pointsValue) ||
+      pointsValue < 0 ||
+      pointsValue > 1000000
+    ) {
+      setEditError('Points must be a whole number from 0 to 1,000,000.');
+      return;
+    }
+
+    setEditSaving(true);
+
+    try {
+      const res = await fetch(`/api/habits/${editingHabitId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          title: editTitle.trim(),
+          points: pointsValue,
+          scheduledDays: editScheduledDays,
+        }),
+      });
+
+      if (!res.ok) {
+        const data = await res.json().catch(() => null);
+        setEditError(data?.error || 'Could not update the habit.');
+        return;
+      }
+
+      await fetchHabits();
+      setEditingHabitId(null);
+      setEditStatus('Habit updated successfully.');
+    } catch (error) {
+      console.error('Error updating habit:', error);
+      setEditError('A network error occurred. Please try again.');
+    } finally {
+      setEditSaving(false);
+    }
+  };
+
   const deleteHabit = async (habitId: string) => {
+    const habit = habits.find((item) => item.id === habitId);
+    const confirmed = window.confirm(
+      `Delete "${habit?.title ?? 'this habit'}"? This action cannot be undone, and its associated completion history will also be deleted.`
+    );
+
+    if (!confirmed) return;
+
     try {
       const res = await fetch(`/api/habits/${habitId}`, {
         method: 'DELETE',
       });
 
       if (res.ok) {
+        if (editingHabitId === habitId) cancelEditingHabit();
+        setEditStatus('Habit deleted.');
         await fetchHabits();
       } else {
-        console.error('Could not delete habit:', await res.text());
+        const data = await res.json().catch(() => null);
+        setEditError(data?.error || 'Could not delete habit.');
+        console.error('Could not delete habit:', data);
       }
     } catch (error) {
       console.error('Error deleting habit:', error);
+      setEditError('A network error occurred while deleting the habit.');
     }
   };
 
@@ -581,7 +697,6 @@ export default function Home() {
                   )}
                 </section>
 
-
                 <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
                   <div className="mb-4">
                     <p className="text-xs font-bold uppercase tracking-wide text-blue-700">
@@ -672,6 +787,7 @@ export default function Home() {
                     onChange={(e) => setNewHabit(e.target.value)}
                     placeholder="e.g., Read for 20 minutes"
                     maxLength={120}
+                    required
                     className="w-full rounded-xl border border-slate-200 px-4 py-3 text-slate-800 outline-none transition focus:border-blue-400 focus:ring-2 focus:ring-blue-100"
                   />
                 </div>
@@ -750,8 +866,204 @@ export default function Home() {
           )}
 
           {activeView === 'edit' && (
-            <ComingSoon title="Edit current habits" description="Habit editing and management tools will live here." />
+            <div className="mx-auto max-w-5xl">
+              <p className="text-sm font-semibold text-blue-700">HABIT MANAGEMENT</p>
+              <h2 className="mt-1 text-2xl font-bold tracking-tight text-slate-900">
+                Edit current habits
+              </h2>
+              <p className="mt-1 text-sm text-slate-500">
+                Update a habit’s name, point value, or weekly schedule. Existing completion history and earned points are preserved.
+              </p>
+
+              {editStatus && (
+                <p role="status" className="mt-4 rounded-xl border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-800">
+                  {editStatus}
+                </p>
+              )}
+              {editError && (
+                <p role="alert" className="mt-4 rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-700">
+                  {editError}
+                </p>
+              )}
+
+              {loading ? (
+                <p className="mt-6 rounded-xl border border-slate-200 bg-white p-5 text-sm text-slate-500">
+                  Loading habits...
+                </p>
+              ) : habits.length === 0 ? (
+                <div className="mt-6 rounded-2xl border border-dashed border-slate-300 bg-white p-8 text-center">
+                  <h3 className="font-semibold text-slate-900">No habits to manage yet</h3>
+                  <p className="mt-1 text-sm text-slate-500">
+                    Create your first habit before editing it.
+                  </p>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setEditError('');
+                      setEditStatus('');
+                      setActiveView('create');
+                    }}
+                    className="mt-4 rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-blue-700"
+                  >
+                    Create a habit
+                  </button>
+                </div>
+              ) : (
+                <div className="mt-6 space-y-4">
+                  {habits.map((habit) => {
+                    const isEditing = editingHabitId === habit.id;
+                    const completedCount = (habit.logs ?? []).filter((log) => log.completed).length;
+
+                    return (
+                      <article
+                        key={habit.id}
+                        className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm"
+                      >
+                        {!isEditing ? (
+                          <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+                            <div className="min-w-0">
+                              <h3 className="break-words text-lg font-bold text-slate-900">
+                                {habit.title}
+                              </h3>
+                              <p className="mt-1 text-sm text-slate-600">
+                                {habit.points ?? 10} points per completion
+                              </p>
+                              <p className="mt-1 text-sm text-slate-500">
+                                Schedule: {formatSchedule(habit.scheduledDays ?? [])}
+                              </p>
+                              <p className="mt-1 text-xs text-slate-400">
+                                Completed {completedCount} {completedCount === 1 ? 'time' : 'times'}
+                              </p>
+                            </div>
+                            <div className="flex shrink-0 flex-wrap gap-2">
+                              <button
+                                type="button"
+                                onClick={() => startEditingHabit(habit)}
+                                className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-blue-700"
+                              >
+                                Edit
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => deleteHabit(habit.id)}
+                                className="rounded-lg border border-red-200 px-4 py-2 text-sm font-semibold text-red-700 transition hover:bg-red-50"
+                              >
+                                Delete
+                              </button>
+                            </div>
+                          </div>
+                        ) : (
+                          <form onSubmit={saveHabitChanges} className="space-y-5">
+                            <div className="flex items-start justify-between gap-4">
+                              <div>
+                                <p className="text-xs font-bold uppercase tracking-wide text-blue-700">
+                                  Editing habit
+                                </p>
+                                <h3 className="mt-1 text-lg font-bold text-slate-900">
+                                  {habit.title}
+                                </h3>
+                              </div>
+                              <button
+                                type="button"
+                                onClick={cancelEditingHabit}
+                                disabled={editSaving}
+                                className="rounded-lg border border-slate-200 px-3 py-2 text-sm font-semibold text-slate-600 transition hover:bg-slate-50 disabled:opacity-50"
+                              >
+                                Cancel
+                              </button>
+                            </div>
+
+                            <div>
+                              <label htmlFor={`edit-title-${habit.id}`} className="mb-2 block text-sm font-semibold text-slate-700">
+                                Habit name
+                              </label>
+                              <input
+                                id={`edit-title-${habit.id}`}
+                                type="text"
+                                value={editTitle}
+                                onChange={(e) => setEditTitle(e.target.value)}
+                                maxLength={120}
+                                required
+                                className="w-full rounded-xl border border-slate-200 px-4 py-3 text-slate-800 outline-none transition focus:border-blue-400 focus:ring-2 focus:ring-blue-100"
+                              />
+                            </div>
+
+                            <div>
+                              <label htmlFor={`edit-points-${habit.id}`} className="mb-2 block text-sm font-semibold text-slate-700">
+                                Points per completion
+                              </label>
+                              <input
+                                id={`edit-points-${habit.id}`}
+                                type="number"
+                                min={0}
+                                max={1000000}
+                                step={1}
+                                value={editPoints}
+                                onChange={(e) => setEditPoints(e.target.value)}
+                                required
+                                className="w-full rounded-xl border border-slate-200 px-4 py-3 text-slate-800 outline-none transition focus:border-blue-400 focus:ring-2 focus:ring-blue-100"
+                              />
+                              <p className="mt-2 text-xs text-slate-500">
+                                This changes the points awarded for future completions. Points already recorded in your history are not recalculated.
+                              </p>
+                            </div>
+
+                            <fieldset>
+                              <legend className="mb-3 text-sm font-semibold text-slate-700">
+                                Weekly schedule
+                              </legend>
+                              <div className="flex flex-wrap gap-2">
+                                {WEEKDAYS.map((day) => {
+                                  const selected = editScheduledDays.includes(day.value);
+                                  return (
+                                    <button
+                                      key={day.value}
+                                      type="button"
+                                      aria-pressed={selected}
+                                      onClick={() => toggleEditScheduledDay(day.value)}
+                                      className={`rounded-xl border px-4 py-2.5 text-sm font-semibold transition ${
+                                        selected
+                                          ? 'border-blue-600 bg-blue-600 text-white'
+                                          : 'border-slate-200 bg-white text-slate-700 hover:bg-slate-50'
+                                      }`}
+                                    >
+                                      {day.label}
+                                    </button>
+                                  );
+                                })}
+                              </div>
+                              <p className="mt-3 text-xs text-slate-500">
+                                Selected days determine when the habit appears on Home. Leave all days unselected for a flexible habit.
+                              </p>
+                            </fieldset>
+
+                            <div className="flex flex-wrap gap-3">
+                              <button
+                                type="submit"
+                                disabled={editSaving}
+                                className="rounded-xl bg-blue-600 px-5 py-3 text-sm font-semibold text-white transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50"
+                              >
+                                {editSaving ? 'Saving changes...' : 'Save changes'}
+                              </button>
+                              <button
+                                type="button"
+                                onClick={cancelEditingHabit}
+                                disabled={editSaving}
+                                className="rounded-xl border border-slate-200 px-5 py-3 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 disabled:opacity-50"
+                              >
+                                Cancel
+                              </button>
+                            </div>
+                          </form>
+                        )}
+                      </article>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
           )}
+
           {activeView === 'shop' && (
             <ComingSoon title="Points shop" description="You’ll be able to spend your earned points here in a future update." />
           )}
