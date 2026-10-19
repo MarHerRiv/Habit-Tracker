@@ -19,6 +19,7 @@ type Log = {
   completed: boolean;
   date: string;
   note?: string | null;
+  pointsEarned?: number;
 };
 
 type Habit = {
@@ -26,6 +27,7 @@ type Habit = {
   title: string;
   createdAt: string;
   scheduledDays: number[];
+  points: number;
   logs: Log[];
 };
 
@@ -46,11 +48,23 @@ function getLocalDateString() {
   return `${year}-${month}-${day}`;
 }
 
+function formatCalendarDate(date: string) {
+  const [year, month, day] = date.slice(0, 10).split('-');
+  return `${day}/${month}/${year}`;
+}
+
+function getWeekdayLabel(date: string) {
+  const [year, month, day] = date.slice(0, 10).split('-').map(Number);
+  const weekday = new Date(year, month - 1, day).getDay();
+  return WEEKDAYS.find((item) => item.value === weekday)?.label ?? '';
+}
+
 export default function Home() {
   const { data: session, status } = useSession();
 
   const [habits, setHabits] = useState<Habit[]>([]);
   const [newHabit, setNewHabit] = useState('');
+  const [newHabitPoints, setNewHabitPoints] = useState('10');
   const [scheduledDays, setScheduledDays] = useState<number[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -160,6 +174,7 @@ export default function Home() {
         body: JSON.stringify({
           title: newHabit.trim(),
           scheduledDays,
+          points: Number(newHabitPoints),
         }),
       });
 
@@ -170,6 +185,7 @@ export default function Home() {
       }
 
       setNewHabit('');
+      setNewHabitPoints('10');
       setScheduledDays([]);
       await fetchHabits();
     } catch (error) {
@@ -180,7 +196,11 @@ export default function Home() {
     }
   };
 
-  const completeHabit = async (habitId: string, existingNote: string) => {
+  const completeHabit = async (
+    habitId: string,
+    existingNote: string,
+    completed: boolean
+  ) => {
     setSavingHabitId(habitId);
     setCompletionErrors((current) => ({
       ...current,
@@ -194,6 +214,8 @@ export default function Home() {
         body: JSON.stringify({
           date: today,
           note: noteDrafts[habitId] ?? existingNote,
+          completed,
+          timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
         }),
       });
 
@@ -285,6 +307,14 @@ export default function Home() {
       .join(', ');
   };
 
+  const allLogs = habits.flatMap((habit) => habit.logs ?? []);
+  const finalizedPoints = allLogs
+    .filter((log) => log.completed && log.date.slice(0, 10) < today)
+    .reduce((total, log) => total + (log.pointsEarned ?? 0), 0);
+  const pendingPoints = allLogs
+    .filter((log) => log.completed && log.date.slice(0, 10) === today)
+    .reduce((total, log) => total + (log.pointsEarned ?? 0), 0);
+
   if (status === 'loading') {
     return (
       <main className="max-w-2xl mx-auto p-8 font-sans">
@@ -327,12 +357,22 @@ export default function Home() {
           </p>
         </div>
 
-        <button
-          onClick={() => signOut()}
-          className="px-4 py-2 bg-gray-100 text-gray-700 font-medium rounded-lg hover:bg-gray-200 transition"
-        >
-          Sign out
-        </button>
+        <div className="flex flex-col items-end gap-2">
+          <div className="rounded-lg border bg-amber-50 px-3 py-2 text-right">
+            <p className="text-sm font-semibold text-amber-900">
+              {finalizedPoints.toLocaleString()} points
+            </p>
+            <p className="text-xs text-amber-800">
+              +{pendingPoints.toLocaleString()} pending today
+            </p>
+          </div>
+          <button
+            onClick={() => signOut()}
+            className="px-4 py-2 bg-gray-100 text-gray-700 font-medium rounded-lg hover:bg-gray-200 transition"
+          >
+            Sign out
+          </button>
+        </div>
       </div>
 
       <section className="mb-8 rounded-lg border p-4">
@@ -427,6 +467,30 @@ export default function Home() {
           />
         </div>
 
+        <div>
+          <label
+            htmlFor="habit-points"
+            className="block text-sm font-medium text-gray-700 mb-1"
+          >
+            Points for completing this habit
+          </label>
+          <input
+            id="habit-points"
+            type="number"
+            min={0}
+            max={1000000}
+            step={1}
+            required
+            value={newHabitPoints}
+            onChange={(e) => setNewHabitPoints(e.target.value)}
+            className="w-full px-4 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-gray-800"
+          />
+          <p className="text-xs text-gray-500 mt-1">
+            These points stay pending until the end of the day. You can undo
+            a completion during the day to remove its pending points.
+          </p>
+        </div>
+
         <fieldset>
           <legend className="text-sm font-medium text-gray-700 mb-2">
             Which days do you want to do this habit?
@@ -484,11 +548,22 @@ export default function Home() {
       ) : (
         <div className="space-y-4">
           {habits.map((habit) => {
-            const todayLog = habit.logs.find(
-              (log) => log.date.slice(0, 10) === today && log.completed
+            const todayLogRecord = habit.logs.find(
+              (log) => log.date.slice(0, 10) === today
             );
-
-            const existingNote = todayLog?.note ?? '';
+            const todayLog = todayLogRecord?.completed ? todayLogRecord : null;
+            const existingNote = todayLogRecord?.note ?? '';
+            const isScheduledToday =
+              !habit.scheduledDays?.length ||
+              habit.scheduledDays.includes(new Date().getDay());
+            const previousCompletion = habit.logs
+              .filter(
+                (log) =>
+                  log.completed && log.date.slice(0, 10) < today
+              )
+              .sort((a, b) =>
+                b.date.slice(0, 10).localeCompare(a.date.slice(0, 10))
+              )[0];
             const completedCount = habit.logs.filter(
               (log) => log.completed
             ).length;
@@ -506,6 +581,10 @@ export default function Home() {
 
                     <p className="text-sm text-gray-500 mt-1">
                       Schedule: {formatSchedule(habit.scheduledDays ?? [])}
+                    </p>
+
+                    <p className="text-sm text-gray-500">
+                      Worth {habit.points ?? 10} points per completion
                     </p>
 
                     <p className="text-sm text-gray-500">
@@ -544,25 +623,44 @@ export default function Home() {
                     className="w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-gray-800"
                   />
 
-                  <button
-                    onClick={() => completeHabit(habit.id, existingNote)}
-                    disabled={savingHabitId === habit.id}
-                    className={`px-4 py-2 font-medium rounded-lg transition disabled:opacity-50 ${
-                      todayLog
-                        ? 'bg-green-100 text-green-800 hover:bg-green-200'
-                        : 'bg-blue-600 text-white hover:bg-blue-700'
-                    }`}
-                  >
-                    {savingHabitId === habit.id
-                      ? 'Saving...'
-                      : todayLog
-                        ? "Update today's completion"
-                        : 'Mark complete today'}
-                  </button>
+                  {todayLog ? (
+                    <button
+                      type="button"
+                      onClick={() => completeHabit(habit.id, existingNote, false)}
+                      disabled={savingHabitId === habit.id}
+                      className="px-4 py-2 bg-green-100 text-green-800 font-medium rounded-lg hover:bg-green-200 disabled:opacity-50 transition"
+                    >
+                      {savingHabitId === habit.id
+                        ? 'Saving...'
+                        : 'Undo today’s completion'}
+                    </button>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => completeHabit(habit.id, existingNote, true)}
+                      disabled={
+                        savingHabitId === habit.id || !isScheduledToday
+                      }
+                      className="px-4 py-2 bg-blue-600 text-white font-medium rounded-lg hover:bg-blue-700 disabled:opacity-50 transition"
+                    >
+                      {savingHabitId === habit.id
+                        ? 'Saving...'
+                        : isScheduledToday
+                          ? `Mark complete today (+${habit.points ?? 10} pending points)`
+                          : 'Not scheduled today'}
+                    </button>
+                  )}
 
                   {todayLog && (
                     <p className="text-sm text-green-700">
-                      Completed today
+                      Completed today — +{todayLog.pointsEarned ?? 0} pending points.
+                    </p>
+                  )}
+
+                  {!todayLog && !isScheduledToday && previousCompletion && (
+                    <p className="text-sm text-gray-600">
+                      Completed {getWeekdayLabel(previousCompletion.date)} (
+                      {formatCalendarDate(previousCompletion.date)})
                     </p>
                   )}
 

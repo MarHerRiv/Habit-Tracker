@@ -57,11 +57,12 @@ model VerificationToken {
 }
 
 model Habit {
-  id           String   @id @default(uuid())
-  title        String
-  createdAt    DateTime @default(now())
-  userId       String
-  scheduledDays Int[]   @default([])
+  id            String   @id @default(uuid())
+  title         String
+  createdAt     DateTime @default(now())
+  userId        String
+  scheduledDays Int[]    @default([])
+  points        Int      @default(10)
 
   user User  @relation(fields: [userId], references: [id], onDelete: Cascade)
   logs Log[]
@@ -70,16 +71,18 @@ model Habit {
 }
 
 model Log {
-  id        String   @id @default(uuid())
-  completed Boolean  @default(true)
-  date      DateTime @default(now()) @db.Date
-  habitId   String
-  note      String?  @db.Text
+  id           String   @id @default(uuid())
+  completed    Boolean  @default(true)
+  date         DateTime @default(now()) @db.Date
+  habitId      String
+  note         String?  @db.Text
+  pointsEarned Int      @default(0)
 
   habit Habit @relation(fields: [habitId], references: [id], onDelete: Cascade)
 
   @@unique([habitId, date])
 }
+
 
 model JournalEntry {
   id        String   @id @default(uuid())
@@ -94,3 +97,4 @@ model JournalEntry {
   @@unique([userId, date])
   @@index([userId])
 }
+

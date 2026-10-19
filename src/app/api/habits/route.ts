@@ -65,14 +65,19 @@ export async function POST(request: Request) {
       );
     }
 
-    const { title, scheduledDays } = body as {
+    const { title, scheduledDays, points } = body as {
       title: unknown;
       scheduledDays?: unknown;
+      points?: unknown;
     };
 
-    if (typeof title !== 'string' || !title.trim()) {
+    if (
+      typeof title !== 'string' ||
+      !title.trim() ||
+      title.trim().length > 120
+    ) {
       return NextResponse.json(
-        { error: 'Title must be a non-empty string' },
+        { error: 'Title must be a non-empty string of at most 120 characters' },
         { status: 400 }
       );
     }
@@ -94,10 +99,26 @@ export async function POST(request: Request) {
       ...new Set(scheduledDays ?? []),
     ];
 
+    // Default to 10 points when the client doesn't send a value.
+    const normalizedPoints = points === undefined ? 10 : points;
+
+    if (
+      typeof normalizedPoints !== 'number' ||
+      !Number.isSafeInteger(normalizedPoints) ||
+      normalizedPoints < 0 ||
+      normalizedPoints > 1000000
+    ) {
+      return NextResponse.json(
+        { error: 'Points must be a whole number from 0 to 1,000,000' },
+        { status: 400 }
+      );
+    }
+
     const habit = await prisma.habit.create({
       data: {
         title: title.trim(),
         scheduledDays: normalizedScheduledDays,
+        points: normalizedPoints,
         userId: session.user.id,
       },
     });
